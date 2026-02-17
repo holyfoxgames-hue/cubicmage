@@ -39,6 +39,7 @@ public class VoxelWorld : MonoBehaviour
 
     [Header("Sky Island Underside Shape")]
     [Min(0)] public int skyIslandSoilDepth = 4;
+    [Min(0)] public int skyIslandDirtDepth = 6;
     public float skyIslandLift = 32f;
     [Min(1)] public int skyIslandMinThickness = 10;
     [Min(1)] public int skyIslandMaxThickness = 84;
@@ -243,6 +244,7 @@ public class VoxelWorld : MonoBehaviour
             skyIslandMinThickness = skyIslandMinThickness,
             skyIslandMaxThickness = skyIslandMaxThickness,
             skyIslandSoilDepth = skyIslandSoilDepth,
+            skyIslandDirtDepth = skyIslandDirtDepth,
             skyIslandThicknessPower = skyIslandThicknessPower,
             skyIslandUndersideNoise = skyIslandUndersideNoise,
             skyIslandUndersideNoiseScale = skyIslandUndersideNoiseScale,

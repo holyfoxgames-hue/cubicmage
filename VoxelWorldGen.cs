@@ -197,7 +197,7 @@ public class VoxelWorldGen
 
                 if (skyIslandMode)
                 {
-                    int bottomY = ComputeSkyIslandBottomY(wx, wz, surfaceY, w, dist01, autoP);
+                    int bottomY = ComputeSkyIslandBottomY(wx, wz, surfaceY, dist01, autoP);
 
                     if (doStats)
                     {
@@ -230,7 +230,7 @@ public class VoxelWorldGen
         }
     }
 
-    // TOP SURFACE: 네 기존 로직 유지
+    // TOP SURFACE: keep existing biome/noise style with sky-island edge drop
     private int ComputeSurfaceY(int wx, int wz, Vector4 biomeW, float dist01, SkyIslandAutoParams autoP)
     {
         float plains = biomeW.x;
@@ -241,9 +241,9 @@ public class VoxelWorldGen
         float baseH = 18f * plains + 28f * hills + 46f * mountains + 34f * plateau;
 
         float ns = BASE_NOISE_SCALE;
-        float n = Mathf.PerlinNoise((wx + _seed * 17.1f) * ns, (wz - _seed * 9.3f) * ns);
-        float n2 = Mathf.PerlinNoise((wx - _seed * 3.7f) * (ns * 2.2f), (wz + _seed * 5.9f) * (ns * 2.2f));
-        float noise = (n * 0.65f + n2 * 0.35f);
+        float nA = Mathf.PerlinNoise((wx + _seed * 17.1f) * ns, (wz - _seed * 9.3f) * ns);
+        float nB = Mathf.PerlinNoise((wx - _seed * 3.7f) * (ns * 2.2f), (wz + _seed * 5.9f) * (ns * 2.2f));
+        float noise = (nA * 0.65f + nB * 0.35f);
         noise = (noise - 0.5f) * 2f;
 
         float ampl = BASE_NOISE_AMPL * Mathf.Lerp(0.6f, 1.35f, mountains);
@@ -251,83 +251,63 @@ public class VoxelWorldGen
 
         if (skyIslandMode)
         {
-            float edge = Mathf.Clamp01(dist01);
-
-            float edgeNoiseMul = Mathf.Lerp(0.55f, 1.0f, edge);
+            float edge01 = Mathf.Clamp01(dist01);
+            float edgeNoiseMul = Mathf.Lerp(0.55f, 1.0f, edge01);
             h = baseH + noise * (ampl * edgeNoiseMul);
 
-            float drop = (autoTuneSkyIsland ? autoP.cliffDrop : skyIslandCliffDrop)
-                         * Mathf.Pow(1f - edge, Mathf.Max(0.01f, autoTuneSkyIsland ? autoP.cliffPower : skyIslandCliffPower));
-            h -= drop;
+            float cliffDrop = autoTuneSkyIsland ? autoP.cliffDrop : skyIslandCliffDrop;
+            float cliffPower = Mathf.Max(0.01f, autoTuneSkyIsland ? autoP.cliffPower : skyIslandCliffPower);
+            h -= cliffDrop * Mathf.Pow(1f - edge01, cliffPower);
 
-            h += (autoTuneSkyIsland ? autoP.lift : skyIslandLift);
+            h += autoTuneSkyIsland ? autoP.lift : skyIslandLift;
         }
 
         h = Mathf.Lerp(h, baseH, plateau * 0.45f);
 
-        int iy = Mathf.RoundToInt(h);
-        iy = Mathf.Clamp(iy, 6, _chunkHeight - 2);
-        return iy;
+        int surfaceY = Mathf.RoundToInt(h);
+        surfaceY = Mathf.Clamp(surfaceY, 6, _chunkHeight - 2);
+        return surfaceY;
     }
 
-    // UNDERSIDE: 뾰족 팁 버전 유지
-    private int ComputeSkyIslandBottomY(int wx, int wz, int surfaceY, Vector4 biomeW, float dist01, SkyIslandAutoParams autoP)
+    // UNDERSIDE: suspended funnel profile (thin rim -> broad body -> centered tip)
+    private int ComputeSkyIslandBottomY(int wx, int wz, int surfaceY, float dist01, SkyIslandAutoParams autoP)
     {
-        dist01 = Mathf.Clamp01(dist01);
-        float H = _chunkHeight;
+        float edgeToCenter01 = Mathf.Clamp01(dist01);
+        float worldH = _chunkHeight;
 
-        float minThick = autoTuneSkyIsland ? autoP.minThick : skyIslandMinThickness;
-        float maxThick = autoTuneSkyIsland ? autoP.maxThick : skyIslandMaxThickness;
-        float thickPow = Mathf.Max(0.01f, autoTuneSkyIsland ? autoP.thickPower : skyIslandThicknessPower);
+        float minThickness = autoTuneSkyIsland ? autoP.minThick : skyIslandMinThickness;
+        float maxThickness = autoTuneSkyIsland ? autoP.maxThick : skyIslandMaxThickness;
+        float thicknessPower = Mathf.Max(0.01f, autoTuneSkyIsland ? autoP.thickPower : skyIslandThicknessPower);
 
-        float baseT = Mathf.Pow(dist01, thickPow);
-        float baseMax = Mathf.Lerp(minThick + 6f, maxThick, 0.35f);
-        float thick = Mathf.Lerp(minThick, baseMax, baseT);
+        // Keep the island suspended in air to avoid bottom-floor cylinder artifacts.
+        int minBottomY = Mathf.Clamp(Mathf.RoundToInt(worldH * 0.10f), 6, Mathf.Max(6, _chunkHeight - 8));
 
-        float rim = 1f - dist01;
-        float shoulder = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(rim / 0.10f));
-        thick += (H * 0.015f) * shoulder;
+        float core01 = Mathf.Pow(edgeToCenter01, thicknessPower);
+        float thickness = Mathf.Lerp(minThickness, maxThickness, core01);
 
-        thick = Mathf.Min(thick, Mathf.Max(2f, surfaceY - 16));
-        int bottomY = surfaceY - Mathf.RoundToInt(thick);
+        float edge01 = 1f - edgeToCenter01;
+        float rimSlim = Mathf.Pow(edge01, 1.4f);
+        thickness -= rimSlim * (worldH * 0.12f);
 
-        float mid = Mathf.Clamp01(4f * dist01 * (1f - dist01));
-        float inward = Mathf.Pow(mid, 1.35f);
-        float inwardAmp = H * 0.10f;
-        int inwardExtra = Mathf.RoundToInt(inwardAmp * inward);
-        inwardExtra = Mathf.Min(inwardExtra, Mathf.Max(0, bottomY - 18));
-        bottomY -= inwardExtra;
+        float body01 = Mathf.Pow(edgeToCenter01, 2.1f);
+        thickness += body01 * (worldH * 0.16f);
 
-        float center01 = Mathf.Pow(dist01, 10f);
-        float spike01 = Mathf.Pow(dist01, 18f);
+        float tip01 = Mathf.Pow(edgeToCenter01, Mathf.Max(1.15f, autoTuneSkyIsland ? autoP.spirePower : skyIslandSpirePower));
+        float tipAmplitude = autoTuneSkyIsland ? autoP.spireAmp : skyIslandSpireAmplitude;
+        thickness += tip01 * tipAmplitude;
 
-        float spikeAmp = H * 0.65f;
-        int spikeExtra = Mathf.RoundToInt(spikeAmp * center01);
-        spikeExtra = Mathf.Min(spikeExtra, Mathf.Max(0, bottomY - 10));
-        bottomY -= spikeExtra;
+        float undersideNoiseScale = Mathf.Max(0.0001f, autoTuneSkyIsland ? autoP.undersideScale : skyIslandUndersideNoiseScale);
+        float undersideNoise = Mathf.PerlinNoise((wx + _seed * 133.7f) * undersideNoiseScale, (wz - _seed * 211.9f) * undersideNoiseScale);
+        float undersideNoiseSigned = (undersideNoise - 0.5f) * 2f;
+        float undersideNoiseAmp = autoTuneSkyIsland ? autoP.undersideAmp : (worldH * skyIslandUndersideNoise);
+        thickness += undersideNoiseSigned * undersideNoiseAmp * Mathf.SmoothStep(0.18f, 1f, edgeToCenter01) * 0.16f;
 
-        float tipAmp = H * 0.20f;
-        int tipExtra = Mathf.RoundToInt(tipAmp * Mathf.Pow(spike01, 2.0f));
-        tipExtra = Mathf.Min(tipExtra, Mathf.Max(0, bottomY - 8));
-        bottomY -= tipExtra;
+        float maxSuspendedThickness = Mathf.Max(3f, surfaceY - minBottomY);
+        thickness = Mathf.Clamp(thickness, 3f, maxSuspendedThickness);
 
-        float pillarRange = 0.24f;
-        float pillarMask = Mathf.Clamp01((pillarRange - dist01) / Mathf.Max(0.001f, pillarRange));
-        pillarMask = Mathf.Pow(pillarMask, 2.2f);
-
-        float sP = Mathf.Max(0.0001f, skyIslandSpireScale);
-        float nP = Mathf.PerlinNoise((wx + _seed * 901.1f) * sP, (wz - _seed * 707.7f) * sP);
-        float ridP = 1f - Mathf.Abs(nP * 2f - 1f);
-        ridP = Mathf.Pow(ridP, 2.6f);
-        float gate = Mathf.SmoothStep(0.76f, 0.94f, ridP);
-
-        float pillarAmp = Mathf.Max(10f, skyIslandSpireAmplitude * 0.35f);
-        int pillarExtra = Mathf.RoundToInt(pillarAmp * gate * pillarMask);
-        pillarExtra = Mathf.Min(pillarExtra, Mathf.Max(0, bottomY - 12));
-        bottomY -= pillarExtra;
-
+        int bottomY = surfaceY - Mathf.RoundToInt(thickness);
         bottomY = Mathf.Min(bottomY, surfaceY - 3);
-        bottomY = Mathf.Clamp(bottomY, 0, _chunkHeight - 2);
+        bottomY = Mathf.Clamp(bottomY, minBottomY, _chunkHeight - 2);
         return bottomY;
     }
 
