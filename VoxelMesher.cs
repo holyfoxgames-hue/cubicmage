@@ -68,17 +68,8 @@ public static class VoxelMesher
                         int ny = y + d.y;
                         int nz = z + d.z;
 
-                        byte neighbor;
-                        if (nx >= 0 && nx < sx && ny >= 0 && ny < sy && nz >= 0 && nz < sz)
-                        {
-                            neighbor = chunk.Get(nx, ny, nz);
-                        }
-                        else
-                        {
-                            // NOTE: 현재 프로젝트엔 cross-chunk Get이 없었음.
-                            // OOB는 AIR로 둠(기존 유지). 막대/기둥 문제를 이걸로 겪는다면 다음 단계에서 cross-chunk 샘플링 넣어야 함.
-                            neighbor = VoxelChunk.AIR;
-                        }
+                        byte neighbor = SampleNeighborVoxel(chunk, nx, ny, nz);
+                        
 
                         if (neighbor != VoxelChunk.AIR) continue;
 
@@ -124,5 +115,33 @@ public static class VoxelMesher
         mesh.RecalculateBounds();
 
         return mesh;
+    }
+
+    private static byte SampleNeighborVoxel(VoxelChunk chunk, int nx, int ny, int nz)
+    {
+        int sx = chunk.size;
+        int sy = chunk.height;
+
+        if (ny < 0 || ny >= sy)
+            return VoxelChunk.AIR;
+
+        if (nx >= 0 && nx < sx && nz >= 0 && nz < sx)
+            return chunk.Get(nx, ny, nz);
+
+        int ocx = chunk.cx;
+        int ocz = chunk.cz;
+        int lx = nx;
+        int lz = nz;
+
+        if (nx < 0) { ocx -= 1; lx = nx + sx; }
+        else if (nx >= sx) { ocx += 1; lx = nx - sx; }
+
+        if (nz < 0) { ocz -= 1; lz = nz + sx; }
+        else if (nz >= sx) { ocz += 1; lz = nz - sx; }
+
+        if (chunk.world != null && chunk.world.TryGetChunk(ocx, ocz, out var other) && other != null)
+            return other.Get(lx, ny, lz);
+
+        return VoxelChunk.AIR;
     }
 }

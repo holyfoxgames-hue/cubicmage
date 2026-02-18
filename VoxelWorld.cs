@@ -31,6 +31,7 @@ public class VoxelWorld : MonoBehaviour
     [Header("Sky Island (Optional)")]
     [Tooltip("When enabled, (0,0,0,0) in BiomeMask becomes VOID (no terrain). World outside the mask becomes VOID as well.")]
     public bool generateAsSkyIsland = false;
+    public bool skyIslandAutoTune = true;
 
     [Range(0f, 0.25f)] public float skyIslandVoidThreshold = 0.01f;
 
@@ -39,6 +40,7 @@ public class VoxelWorld : MonoBehaviour
 
     [Header("Sky Island Underside Shape")]
     [Min(0)] public int skyIslandSoilDepth = 4;
+    [Min(0)] public int skyIslandDirtDepth = 6;
     public float skyIslandLift = 32f;
     [Min(1)] public int skyIslandMinThickness = 10;
     [Min(1)] public int skyIslandMaxThickness = 84;
@@ -53,22 +55,17 @@ public class VoxelWorld : MonoBehaviour
     public float skyIslandSpireScale = 0.018f;
     public float skyIslandSpirePower = 3.2f;
 
-    // ✅ stone gradient/noise
     [Header("Sky Island Stone Look")]
     public Gradient skyIslandStoneGradient; // darker->lighter
-    [Range(0f, 1f)] public float skyIslandStoneGradientStrength = 0.55f;
-    [Range(0f, 0.35f)] public float skyIslandStoneNoiseAmount = 0.10f;
-    public float skyIslandStoneNoiseScale = 0.045f;
+    [Range(0f, 1f)] public float skyIslandStoneGradientStrength = 0.90f;
+    [Range(0f, 0.35f)] public float skyIslandStoneNoiseAmount = 0.22f;
+    public float skyIslandStoneNoiseScale = 0.030f;
 
-    [Header("Sky Island Stone Tint (fallback)")]
-    public Color skyIslandStoneTintColor = new Color(0.62f, 0.66f, 0.70f, 1f);
-    [Range(0f, 1f)] public float skyIslandStoneTintStrength = 0.65f;
-    [Range(0f, 1f)] public float skyIslandStoneStartHeight01 = 0.55f;
-
-    // Dirt tint
-    [Header("Dirt Tint")]
-    public Color dirtTintColor = new Color(0.45f, 0.34f, 0.23f, 1f);
-    [Range(0f, 1f)] public float dirtTintStrength = 0.35f;
+    [Header("Sky Island Dirt Look")]
+    public Gradient skyIslandDirtGradient;
+    [Range(0f, 1f)] public float skyIslandDirtGradientStrength = 0.88f;
+    [Range(0f, 0.35f)] public float skyIslandDirtNoiseAmount = 0.18f;
+    public float skyIslandDirtNoiseScale = 0.060f;
 
     // =========================
     // Feature mask (Road/River)
@@ -94,7 +91,8 @@ public class VoxelWorld : MonoBehaviour
 
     [Range(0f, 0.25f)] public float noiseColorAmount = 0.08f;
     public float noiseColorScale = 0.035f;
-
+    [Header("Terrain Height Tuning")]
+    [Min(0.2f)] public float mountainHeightBoost = 1.45f;
     [Header("Block Color Overrides (Optional)")]
     public bool applyBlockTypeTint = true;
 
@@ -153,25 +151,36 @@ public class VoxelWorld : MonoBehaviour
     private void Reset()
     {
         ApplyDefaultGradientsIfNeeded(force: true);
-        ApplyDefaultStoneGradientIfNeeded(force: true);
+        ApplyDefaultBlockGradientsIfNeeded(force: true);
     }
 
     private void OnValidate()
     {
         ApplyDefaultGradientsIfNeeded(force: false);
-        ApplyDefaultStoneGradientIfNeeded(force: false);
+        ApplyDefaultBlockGradientsIfNeeded(force: false);
     }
 
-    private void ApplyDefaultStoneGradientIfNeeded(bool force)
+    private void ApplyDefaultBlockGradientsIfNeeded(bool force)
     {
-        if (!force && skyIslandStoneGradient != null && skyIslandStoneGradient.colorKeys != null && skyIslandStoneGradient.colorKeys.Length > 0)
-            return;
+        if (force || IsUnsetOrWhite(skyIslandStoneGradient))
+        {
+            skyIslandStoneGradient = MakeGradient(
+                (new Color(0.24f, 0.27f, 0.31f, 1f), 0.00f),
+                (new Color(0.40f, 0.45f, 0.50f, 1f), 0.35f),
+                (new Color(0.58f, 0.63f, 0.69f, 1f), 0.70f),
+                (new Color(0.76f, 0.80f, 0.85f, 1f), 1.00f)
+            );
+        }
 
-        skyIslandStoneGradient = MakeGradient(
-            (new Color(0.34f, 0.36f, 0.38f, 1f), 0.00f),
-            (new Color(0.55f, 0.58f, 0.60f, 1f), 0.55f),
-            (new Color(0.78f, 0.81f, 0.84f, 1f), 1.00f)
-        );
+        if (force || IsUnsetOrWhite(skyIslandDirtGradient))
+        {
+            skyIslandDirtGradient = MakeGradient(
+                (new Color(0.25f, 0.17f, 0.10f, 1f), 0.00f),
+                (new Color(0.39f, 0.27f, 0.16f, 1f), 0.32f),
+                (new Color(0.55f, 0.39f, 0.24f, 1f), 0.72f),
+                (new Color(0.72f, 0.55f, 0.35f, 1f), 1.00f)
+            );
+        }
     }
 
     private void ApplyDefaultGradientsIfNeeded(bool force)
@@ -215,7 +224,7 @@ public class VoxelWorld : MonoBehaviour
             seed = UnityEngine.Random.Range(int.MinValue / 2, int.MaxValue / 2);
 
         ApplyDefaultGradientsIfNeeded(force: false);
-        ApplyDefaultStoneGradientIfNeeded(force: false);
+        ApplyDefaultBlockGradientsIfNeeded(force: false);
 
         ClearWorld();
 
@@ -238,11 +247,13 @@ public class VoxelWorld : MonoBehaviour
         var gen = new VoxelWorldGen(seed, chunkSize, chunkHeight, WorldSizeX, WorldSizeZ)
         {
             skyIslandMode = generateAsSkyIsland,
+            autoTuneSkyIsland = skyIslandAutoTune,
             voidThreshold = skyIslandVoidThreshold,
             skyIslandLift = skyIslandLift,
             skyIslandMinThickness = skyIslandMinThickness,
             skyIslandMaxThickness = skyIslandMaxThickness,
             skyIslandSoilDepth = skyIslandSoilDepth,
+            skyIslandDirtDepth = skyIslandDirtDepth,
             skyIslandThicknessPower = skyIslandThicknessPower,
             skyIslandUndersideNoise = skyIslandUndersideNoise,
             skyIslandUndersideNoiseScale = skyIslandUndersideNoiseScale,
@@ -251,6 +262,7 @@ public class VoxelWorld : MonoBehaviour
             skyIslandSpireAmplitude = skyIslandSpireAmplitude,
             skyIslandSpireScale = skyIslandSpireScale,
             skyIslandSpirePower = skyIslandSpirePower,
+            mountainHeightBoost = mountainHeightBoost,
             islandDistanceSampler01 = generateAsSkyIsland ? SampleSkyIslandDistance01 : null,
 
             // debug pass-through
@@ -600,12 +612,20 @@ public class VoxelWorld : MonoBehaviour
 
     public float SampleSkyIslandDistance01(Vector3 worldPos)
     {
-        if (!generateAsSkyIsland || _skyIslandDist01 == null || _skyW <= 0 || _skyH <= 0)
+        if (!generateAsSkyIsland)
             return 0f;
 
         float u = (worldPos.x - maskWorldOffset.x) / Mathf.Max(1e-3f, maskWorldSize.x);
         float v = (worldPos.z - maskWorldOffset.y) / Mathf.Max(1e-3f, maskWorldSize.y);
         if (u < 0f || u > 1f || v < 0f || v > 1f) return 0f;
+
+        // Robust fallback gradient: always provides center->edge falloff even if dist field is flat/missing.
+        float du = u - 0.5f;
+        float dv = v - 0.5f;
+        float radial = 1f - Mathf.Clamp01(Mathf.Sqrt(du * du + dv * dv) / 0.70710678f);
+
+        if (_skyIslandDist01 == null || _skyW <= 0 || _skyH <= 0)
+            return radial;
 
         float fx = u * (_skyW - 1);
         float fy = v * (_skyH - 1);
@@ -625,7 +645,10 @@ public class VoxelWorld : MonoBehaviour
 
         float ab = Mathf.Lerp(A, B, tx);
         float cd = Mathf.Lerp(C, D, tx);
-        return Mathf.Lerp(ab, cd, ty);
+        float sampled = Mathf.Lerp(ab, cd, ty);
+
+        // If mask distance field ends up too flat, keep a guaranteed gradient using radial fallback.
+        return Mathf.Max(sampled, radial * 0.85f);
     }
 
     // =========================================================
@@ -673,39 +696,47 @@ public class VoxelWorld : MonoBehaviour
             return Color.Lerp(baseColor, riverBedTintColor, Mathf.Clamp01(riverBedTintStrength));
 
         if (blockId == VoxelChunk.DIRT)
-            return Color.Lerp(baseColor, dirtTintColor, Mathf.Clamp01(dirtTintStrength));
+        {
+            float h01 = Mathf.InverseLerp(0f, chunkHeight - 1, worldPos.y);
+            Color gcol = (skyIslandDirtGradient != null) ? skyIslandDirtGradient.Evaluate(h01) : baseColor;
+            float gs = Mathf.Clamp01(skyIslandDirtGradientStrength);
+            Color col = Color.Lerp(gcol, baseColor, 0.12f * (1f - gs));
+
+            float s = Mathf.Max(0.0001f, skyIslandDirtNoiseScale);
+            float nMacro = Mathf.PerlinNoise((worldPos.x + seed * 5.1f) * s, (worldPos.z - seed * 3.9f) * s);
+            float nMicro = Mathf.PerlinNoise((worldPos.x - seed * 17.3f) * (s * 2.4f), (worldPos.z + seed * 11.2f) * (s * 2.4f));
+            float nVert = Mathf.PerlinNoise((worldPos.y + seed * 1.7f) * (s * 1.8f), (worldPos.x - worldPos.z) * (s * 0.9f));
+            float nMix = nMacro * 0.55f + nMicro * 0.30f + nVert * 0.15f;
+            float noise = (nMix - 0.5f) * 2f;
+            float k = 1f + noise * (Mathf.Clamp01(skyIslandDirtNoiseAmount) * 1.35f);
+
+            col.r = Mathf.Clamp01(col.r * k);
+            col.g = Mathf.Clamp01(col.g * (k * 0.98f));
+            col.b = Mathf.Clamp01(col.b * (k * 0.94f));
+            col.a = 1f;
+            return col;
+        }
 
         if (blockId == VoxelChunk.STONE)
         {
             float h01 = Mathf.InverseLerp(0f, chunkHeight - 1, worldPos.y);
-
-            Color gcol = (skyIslandStoneGradient != null) ? skyIslandStoneGradient.Evaluate(h01) : skyIslandStoneTintColor;
+            Color gcol = (skyIslandStoneGradient != null) ? skyIslandStoneGradient.Evaluate(h01) : baseColor;
             float gs = Mathf.Clamp01(skyIslandStoneGradientStrength);
-
-            Color col = Color.Lerp(skyIslandStoneTintColor, gcol, gs);
+            Color col = Color.Lerp(gcol, baseColor, 0.10f * (1f - gs));
 
             float s = Mathf.Max(0.0001f, skyIslandStoneNoiseScale);
-            float n = Mathf.PerlinNoise((worldPos.x + seed * 13.7f) * s, (worldPos.z - seed * 9.9f) * s);
-            float noise = (n - 0.5f) * 2f;
-            float k = 1f + noise * Mathf.Clamp01(skyIslandStoneNoiseAmount);
+            float nMacro = Mathf.PerlinNoise((worldPos.x + seed * 13.7f) * s, (worldPos.z - seed * 9.9f) * s);
+            float nRidged = Mathf.PerlinNoise((worldPos.x - seed * 7.4f) * (s * 2.7f), (worldPos.z + seed * 4.2f) * (s * 2.7f));
+            nRidged = 1f - Mathf.Abs(nRidged * 2f - 1f);
+            float nVert = Mathf.PerlinNoise((worldPos.y + seed * 2.9f) * (s * 2.0f), (worldPos.x + worldPos.z) * (s * 0.8f));
+            float nMix = nMacro * 0.50f + nRidged * 0.35f + nVert * 0.15f;
+            float noise = (nMix - 0.5f) * 2f;
+            float k = 1f + noise * (Mathf.Clamp01(skyIslandStoneNoiseAmount) * 1.35f);
 
-            col.r = Mathf.Clamp01(col.r * k);
+            col.r = Mathf.Clamp01(col.r * (k * 0.97f));
             col.g = Mathf.Clamp01(col.g * k);
-            col.b = Mathf.Clamp01(col.b * k);
+            col.b = Mathf.Clamp01(col.b * (k * 1.03f));
             col.a = 1f;
-
-            if (generateAsSkyIsland)
-            {
-                float start = Mathf.Clamp01(skyIslandStoneStartHeight01);
-                if (h01 < start)
-                {
-                    float a = Mathf.InverseLerp(start, 0f, h01);
-                    a = a * a * (3f - 2f * a);
-                    float t = a * Mathf.Clamp01(skyIslandStoneTintStrength);
-                    col = Color.Lerp(col, skyIslandStoneTintColor, t);
-                }
-            }
-
             return col;
         }
 
@@ -744,7 +775,7 @@ public class VoxelWorld : MonoBehaviour
         if (!File.Exists(path)) { Debug.LogError($"Missing file: {path}"); return; }
 
         ApplyDefaultGradientsIfNeeded(force: false);
-        ApplyDefaultStoneGradientIfNeeded(force: false);
+        ApplyDefaultBlockGradientsIfNeeded(force: false);
 
         ClearWorld();
 
