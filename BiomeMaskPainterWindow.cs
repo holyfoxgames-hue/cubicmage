@@ -1007,12 +1007,12 @@ public class BiomeMaskPainterWindow : EditorWindow
                 if (g > maxV) { maxV = g; maxCh = 1; }
                 if (b > maxV) { maxV = b; maxCh = 2; }
                 if (a > maxV) { maxV = a; maxCh = 3; }
-
+                float keep = Mathf.Clamp01(maxV);
                 workPixels[i] =
-                    (maxCh == 0) ? new Color(1, 0, 0, 0) :
-                    (maxCh == 1) ? new Color(0, 1, 0, 0) :
-                    (maxCh == 2) ? new Color(0, 0, 1, 0) :
-                                   new Color(0, 0, 0, 1);
+                    (maxCh == 0) ? new Color(keep, 0, 0, 0) :
+                    (maxCh == 1) ? new Color(0, keep, 0, 0) :
+                    (maxCh == 2) ? new Color(0, 0, keep, 0) :
+                                   new Color(0, 0, 0, keep);
             }
         }
 
